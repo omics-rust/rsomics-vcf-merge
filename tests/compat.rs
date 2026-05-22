@@ -39,10 +39,8 @@ fn runs_with_fixture() {
     );
 }
 
-// Multi-sample merge must match `bcftools merge`: all inputs' samples as
-// columns, union of sites, ./. fill for missing genotypes.
-#[test]
-fn merge_matches_bcftools() {
+/// ours merge of `a`+`b` must match `bcftools merge` (record-level).
+fn check_merge(a: &str, b: &str) {
     if !have("bcftools") || !have("bgzip") || !have("tabix") {
         eprintln!("skipping: bcftools/bgzip/tabix not found");
         return;
@@ -73,14 +71,10 @@ fn merge_matches_bcftools() {
         );
         gz
     };
-    let a_gz = prep("s1.vcf");
-    let b_gz = prep("s2.vcf");
+    let a_gz = prep(a);
+    let b_gz = prep(b);
 
-    let ours_out = ours()
-        .arg(golden("s1.vcf"))
-        .arg(golden("s2.vcf"))
-        .output()
-        .unwrap();
+    let ours_out = ours().arg(golden(a)).arg(golden(b)).output().unwrap();
     let bcf_out = Command::new("bcftools")
         .arg("merge")
         .arg(&a_gz)
@@ -90,4 +84,17 @@ fn merge_matches_bcftools() {
     assert!(bcf_out.status.success());
 
     assert_eq!(records(&ours_out.stdout), records(&bcf_out.stdout));
+}
+
+// Biallelic / distinct-position multi-sample merge.
+#[test]
+fn merge_matches_bcftools() {
+    check_merge("s1.vcf", "s2.vcf");
+}
+
+// Multiallelic: same position with different ALTs across files must be combined
+// into one record (A>G,T) with per-sample GT allele re-indexing + ./. fill.
+#[test]
+fn merge_multiallelic_matches_bcftools() {
+    check_merge("ma1.vcf", "ma2.vcf");
 }
